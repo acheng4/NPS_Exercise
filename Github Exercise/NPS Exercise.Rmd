@@ -1,0 +1,194 @@
+---
+title: "GitHub Net Promoter Score Exercise"
+output:
+  html_document: default
+  word_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+Austin Cheng
+https://github.com/acheng4/NPS_Exercise
+
+## 1. What is our Net Promoter Score (NPS)?
+
+```{r}
+read_in_data<-read.csv("/Users/Austin/Desktop/nps-exercise.csv")
+analysis_data<-read_in_data
+
+analysis_data$NPS_Category<-analysis_data$answer.10
+
+analysis_data$NPS_Category[analysis_data$answer.10 >=9] <-"Promoter"
+analysis_data$NPS_Category[7 <= analysis_data$answer.10 & analysis_data$answer.10 <= 8] <-"Passive"
+analysis_data$NPS_Category[analysis_data$answer.10 <= 6] <-"Detractor"
+analysis_data$NPS_Category[is.na(analysis_data$answer.10)]<-"Missing"
+
+analysis_data$NPS_Assignment<-analysis_data$NPS_Category
+
+analysis_data$NPS_Assignment[analysis_data$NPS_Category=="Promoter"]<-1
+analysis_data$NPS_Assignment[analysis_data$NPS_Category=="Detractor"]<- -1
+analysis_data$NPS_Assignment[analysis_data$NPS_Category=="Passive"]<- 0
+analysis_data$NPS_Assignment[analysis_data$NPS_Category=="Missing"]<- -1
+
+analysis_data$NPS_Assignment<-as.numeric(analysis_data$NPS_Assignment)
+
+NPS = 100*sum(analysis_data$NPS_Assignment)/length(analysis_data$NPS_Assignment)
+NPS
+```
+
+Rounding the calculation, the NPS is 59. In a common understanding of NPS, this is an excellent score, indicating high loyalty to GitHub.
+
+As a conservative approach, I decided to label a missing value as a Detractor, because there are more possible values for a Detractor than for a Promoter or Passive.
+
+## 2. What is the margin of error or confidence level of our NPS?
+
+The Margin of Error is a measurement of possible sampling error based on the variance of the Random Variables and the Sample Size. The NPS is not a standard statistical measurement, but we can derive the variance based its underlying Multinomial Distribution. The NPS is calculated as a * Pr + b * Pa + c * D where Pr is the Promoters & a = +1, Pa is the Passives & b = 0, and D is the detractors & c = -1. Since b = 0 for the Passives, Var(NPS) = Var((100/n) * (a * Pr + c * D)) = (100/n)^2 * [a^2 * Var(Pr) + c^2 * Var(D) - 2 * a * c * Cov(Pr,D)]
+
+The variance of a random variable for a multinomial distribution is n * p_i * (1-p_i) and the Cov(Pr,D) = -n * p_pr * p_d
+
+Var(NPS) simplifes to  (100/n)^2 * [(1^2) * Var(Pr) + (-1)^2 * Var(D) - 2 * 1 * (-1)*Cov(Pr,D)]
+
+```{r}
+n=length(analysis_data$NPS_Assignment)
+
+p_pr = sum(analysis_data$NPS_Assignment[analysis_data$NPS_Category=="Promoter"])/n
+p_pr
+
+p_d=length(which(analysis_data$NPS_Category=="Detractor" | analysis_data$NPS_Category=="Missing" )) / n
+p_d
+
+var = n*p_pr*(1-p_pr) + n*p_d*(1-p_d) +n*2*p_d*p_pr
+
+standard_error = qnorm(1-0.05/2) * sqrt(((100/n)^2 )* var)
+standard_error
+
+NPS+standard_error
+NPS-standard_error
+```
+I am 95% confident that the true population NPS lies between 56.3 and 62.3. In layman terms, I would expect a sample NPS to be in this interval 95 times out 100 surveys.
+
+
+## 3. How does a user's account age impact NPS?:
+
+Please refer to the images I placed in the GitHub Repository I created: https://github.com/acheng4/NPS_Exercise
+
+
+Since NPS is a heuristic metric, let's look at just the Recommendation Score in relation to account age.
+
+These two plots show us there is not much of an association between the account age and the Likehood to Recommend. On the higher end of recommendation, 9 & 10, there is no clump of data that trends to old or new. Everything is evenly distributed. Even at the middle recommendation range, 6 to 8, there is no discernible pattern. Looking at a box and whisker plot, which tells us where 50% of the data is centrally located, there is no discernible difference.
+
+Apologies, for some reason the plot does not display properly in R Markdown. I tried to insert it as an image from a local file but also couldn't that to work. Please refer to the images I placed in the GitHub Repository I created: https://github.com/acheng4/NPS_Exercise
+
+
+```{r}
+#install.packages("ggplot2")
+library(ggplot2)
+age_analysis_data<-analysis_data[which(!is.na(analysis_data$answer.10)),]
+
+qplot(factor(age_analysis_data$answer.10),age_analysis_data$github_age_in_days
+      ,ylab = "Account Age in Days"
+      ,xlab = "Likelihood to Recommend GitHub"
+      ,geom = c("jitter")
+      ,main = "GitHub Recommendation with Account Age"
+      )
+qplot(factor(age_analysis_data$answer.10),age_analysis_data$github_age_in_days
+      ,ylab = "GitHub Age in Days"
+      ,xlab = "Likelihood to Recommend GitHub"
+      ,geom = c("boxplot")
+      ,main = "GitHub Recommendation with Account Age Box Plot"
+      )
+
+# Please refer to images in GitHub Repository https://github.com/acheng4/NPS_Exercise
+
+```
+
+
+
+A quick correlation calculation near 0 tells us that the association of account age and Recommendation score is very low (-1 would be a strong negative association, 1 would be a strong positive association).
+
+```{r }
+#install.packages("plyr")
+library(plyr)
+cor(as.numeric(age_analysis_data$github_age_in_days), age_analysis_data$answer.10)
+
+```
+
+
+Lastly, comparing NPS categories to the average age of the account, there is no discernible difference. While the mean account age looks like it trends down with higher satisfaction, the standard deviation of the data is so great that we cannot make any conclusions.
+
+```{r }}
+#install.packages("plyr")
+library(plyr)
+
+ddply(age_analysis_data
+      , .(NPS_Category)
+      , summarize
+      , Mean=mean(as.numeric(github_age_in_days))
+      , Standard_Deviation=sd(as.numeric(github_age_in_days))
+      )
+```
+
+Nonetheless, we can try a linear regression model, treating the Recommendation Score as if it were a continuous variable and seeing how the age affects this.
+
+```{r }
+age_regression <- lm(as.numeric(answer.10) ~ as.numeric(github_age_in_days), data=age_analysis_data)
+summary(age_regression)
+```
+
+The coefficient for age in this linear regression model is near 0. In addition, there is not a statistically significant impact that age has on the Recommendation Likelihood. If this were a model that I were actually going to evaluate, I would also have to look at the residuals of the model values relative to the true values, determine if they are normally distributed and do not have a trend.
+
+Given the results from these different exploratory analyses, it would not be a wise use of time to fit a model of age to Recommendation Likelihood. A limitation to this model is that the Recommendation Likelihood variable is categorical and hierarchical but the linear regerssion model I used here treats it as if it were continuous. 
+
+
+## 4. Which survey answers or other user attributes correlate meaningfully with a higher or lower NPS?
+
+I ran chi-square tests between NPS Categorizations and the various survey questions. Using an alpha of 0.05, meaning that I am  95% confident that the results are not generated due to chance alone, the following responses were found to be statistically significant.
+
+
+```{r}
+chi_square_data<-analysis_data[which(!is.na(analysis_data$answer.10)),]
+
+improve<-table(chi_square_data$answer.14,chi_square_data$NPS_Category)
+improve_2<-improve[2:dim(improve)[1],]
+chisq.test(improve_2)
+improve_2
+prop.table(improve_2,1)
+
+```
+
+A respondent's improvement recommendation for using GitHub was found to be statistically significant with NPS Categorization. Promoters believe that the Project Management Tools need the most improvement. Detractors have a higher association with believing Help documentation and Pricing need improvement. 
+
+``` {r}
+role<-table(chi_square_data$answer.3,chi_square_data$NPS_Category)
+role_2<-role[2:dim(role)[1],]
+role_2
+chisq.test(role_2)
+prop.table(role_2,1)
+```
+
+Project/product managers and Experienced programmers have the higest associateion with being Promoters, while Writers and Designers are the greatest Detractors, although there are very few of them.
+
+
+```{r}
+at_job<-table(chi_square_data$answer.9,chi_square_data$NPS_Category)
+at_job_2<-at_job[2:dim(at_job)[1],]
+at_job_2
+chisq.test(at_job_2)
+prop.table(at_job_2,1)
+```
+
+The greatest Promoters have an association with using GitHub at work. Detractors responded 2.5x more frequently with not using it at work.
+
+## 5. Based on your discoveries, what would you research next?
+
+GitHub has an Excellent NPS, but there are ways to excel still more. Based on the Chi-Squared tests done in the previous section, I would reserach how Help Documentation and Pricing could be improved, since Detractors responded this is where it can be best improved. Keeping our Promoters happy is important as well, and they noted that Project Management Tools is the best way to improve. This indicates how we can continue adding value to those who are already our greatest advocates.
+
+
+While the Writers and Designers were the greatest Detractors, they also represent an incredibly small population of GitHub users, and addressing their needs wouldn't be the best focus. Since high satisfaction is associated with using GitHub at work, I would research what aspects of GitHub bring highest satisfaction on the job. Do the people who don't use GitHub in their jobs use another Git product? If so, what aspects of GitHub stand out compared to competitors? There can be whitespace in selling GitHub Enterprise, further influencing GitHub's NPS and overall product perception.
+
+
+Lastly, I would want to analyze utilization metrics in relation to satisfaction. Some metrics I would be interested in are the number of repositories a user has, frequency of use, commits made, communication frequency, and social networking effects.
+
+
